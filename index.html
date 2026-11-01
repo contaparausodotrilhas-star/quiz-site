@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quiz Interativo</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-color: #0f172a;
+  --card-bg: #1e293b;
+  --text-color: #f8fafc;
+}
+body {
+  font-family: 'Poppins', sans-serif;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: var(--bg-color);
+  color: var(--text-color);
+  transition: background 0.4s ease;
+  padding: 15px;
+  box-sizing: border-box;
+}
+#container {
+  width: 100%;
+  max-width: 480px;
+  background: var(--card-bg);
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  padding: 24px;
+  box-sizing: border-box;
+  text-align: center;
+}
+input {
+  font-family: 'Poppins', sans-serif;
+  font-size: 18px;
+  padding: 14px;
+  width: 100%;
+  margin: 10px 0;
+  border: 2px solid #334155;
+  border-radius: 12px;
+  background: #0f172a;
+  color: #fff;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.3s;
+}
+input:focus {
+  border-color: #38bdf8;
+}
+.btn-acao {
+  font-family: 'Poppins', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  padding: 14px;
+  width: 100%;
+  margin: 10px 0;
+  border: none;
+  border-radius: 12px;
+  background: #38bdf8;
+  color: #0f172a;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.2s;
+}
+.btn-acao:active {
+  transform: scale(0.98);
+}
+.pergunta-box {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  padding: 14px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+  text-align: center;
+  border-left: 4px solid #38bdf8;
+}
+.alts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.alts button {
+  font-family: 'Poppins', sans-serif;
+  height: 90px;
+  margin: 0;
+  width: 100%;
+  font-size: 38px;
+  font-weight: 700;
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+  transition: transform 0.1s, filter 0.2s;
+}
+.alts button:active {
+  transform: scale(0.95);
+  filter: brightness(0.9);
+}
+h2 {
+  margin-top: 0;
+  font-weight: 700;
+}
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="tela"></div>
+</div>
+<script>
+const DB = "https://teste-kahoot-538bf-default-rtdb.firebaseio.com/salas/";
+const sala = new URLSearchParams(location.search).get("sala") || "";
+const cores = ["#e21b3c", "#1368ce", "#d89e00", "#26890c"];
+const letras = ["A", "B", "C", "D"];
+const T = document.getElementById("tela");
+let id = null, nome = "", respondida = 0, minhaAlt = 0, ultimo = "";
+
+const url = c => DB + sala + "/" + c + ".json";
+
+function resetBg() {
+  document.body.style.background = "var(--bg-color)";
+}
+
+function msg(t) {
+  resetBg();
+  T.innerHTML = "";
+  const h = document.createElement("h2");
+  h.textContent = t;
+  T.appendChild(h);
+}
+
+function entrada() {
+  resetBg();
+  if (!sala) { msg("Escaneie o QR Code do jogo."); return; }
+  T.innerHTML = '<h2>Sala ' + sala.replace(/[^A-Za-z0-9]/g, "") + '</h2>' +
+    '<input id="nome" maxlength="15" placeholder="Seu nome">' +
+    '<button class="btn-acao" onclick="entrar()">Entrar</button>';
+}
+
+function entrar() {
+  nome = document.getElementById("nome").value.trim();
+  if (!nome) return;
+  id = "j" + Math.random().toString(36).slice(2, 8);
+  fetch(url("jogadores/" + id), { method: "PUT", body: JSON.stringify({ nome: nome }) });
+  msg("Pronto, " + nome + "! Aguarde o início.");
+  setInterval(atualizar, 700);
+}
+
+async function atualizar() {
+  let e;
+  try { e = await (await fetch(url("estado"))).json(); } catch (x) { return; }
+  if (!e) return;
+  const chave = e.fase + e.n;
+  if (chave === ultimo) return;
+  ultimo = chave;
+  if (e.fase === "pergunta") { if (respondida !== e.n) botoes(e.n); }
+  else if (e.fase === "resultado") await resultado(e);
+  else if (e.fase === "fim") await fim();
+  else msg("Aguarde o início.");
+}
+
+async function botoes(n) {
+  resetBg();
+  T.innerHTML = "";
+  
+  // Tenta buscar o texto da pergunta no Firebase para exibir em cima
+  let qTexto = "Questão " + n;
+  try {
+    const qData = await (await fetch(DB + sala + "/perguntas/" + (n - 1) + ".json")).json();
+    if (qData && qData.titulo) qTexto = qData.titulo;
+    else if (qData && qData.pergunta) qTexto = qData.pergunta;
+  } catch(err) {}
+
+  const pBox = document.createElement("div");
+  pBox.className = "pergunta-box";
+  pBox.textContent = qTexto;
+  T.appendChild(pBox);
+
+  const g = document.createElement("div");
+  g.className = "alts";
+  for (let i = 1; i <= 4; i++) {
+    const b = document.createElement("button");
+    b.textContent = letras[i - 1];
+    b.style.background = cores[i - 1];
+    b.onclick = () => responder(n, i);
+    g.appendChild(b);
+  }
+  T.appendChild(g);
+}
+
+async function responder(n, alt) {
+  respondida = n; minhaAlt = alt;
+  msg("Resposta enviada! Aguarde.");
+  await fetch(url("respostas/" + n + "/" + id), {
+    method: "PUT",
+    body: JSON.stringify({ alt: alt, t: { ".sv": "timestamp" } })
+  });
+}
+
+async function resultado(e) {
+  const p = await (await fetch(url("pontos/" + id))).json();
+  const acertou = respondida === e.n && minhaAlt === e.correta;
+  
+  // Muda o fundo da tela inteiro para Verde (acerto) ou Vermelho (erro)
+  document.body.style.background = acertou ? "#10b981" : "#ef4444";
+  
+  T.innerHTML = `
+    <h1 style="font-size: 34px; margin-bottom: 8px;">${acertou ? "🎉 Acertou!" : "❌ Errou!"}</h1>
+    <p style="font-size: 20px; font-weight: 600;">Seus pontos: ${p || 0}</p>
+  `;
+}
+
+async function fim() {
+  resetBg();
+  const p = await (await fetch(url("pontos/"+id))).json();
+  msg("Fim de jogo! Você fez " + (p || 0) + " pontos.");
+}
+
+entrada();
+</script>
+</body>
+</html>
